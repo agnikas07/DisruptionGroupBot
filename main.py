@@ -338,7 +338,7 @@ async def leaderboard(interaction: discord.Interaction, period: app_commands.Cho
 
 
 est_timezone = pytz.timezone('US/Eastern')
-post_time = datetime.time(hour=13, minute=4, tzinfo=est_timezone)
+post_time = datetime.time(hour=15, minute=0, tzinfo=est_timezone)
 
 
 @tasks.loop(time=post_time)
