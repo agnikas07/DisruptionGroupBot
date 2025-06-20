@@ -296,6 +296,12 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
             await interaction.followup.send(success_message, ephemeral=True)
+
+            today_df = get_leaderboard_data('today')
+            day_of_week = datetime.datetime.now().strftime('%A')
+            today_title = f"📊 Today ({day_of_week}):"
+            today_leaderboard = format_leaderboard_section(today_title, today_df)
+            await interaction.channel.send(today_leaderboard)
         except Exception as e:
             print(f"Error writing to Google Sheets: {e}")
             await interaction.followup.send("❌ **Error:** Could not write data to database.", ephemeral=True)
