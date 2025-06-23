@@ -284,6 +284,8 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
         submission_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         user_id = interaction.user.id
         discord_username = interaction.user.display_name
+        user_roles = interaction.user.roles[1:]
+        roles_str = ', '.join([role.name for role in user_roles])
         premium_amount_str = self.premium.value
         try:
             unrounded_premium = float(premium_amount_str.replace(',', ''))
@@ -292,7 +294,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             await interaction.followup.send("❌ **Error:** Please enter a valid number.", ephemeral=True)
             return
         try:
-            row_to_add = [submission_date, str(user_id), discord_username, premium_amount]
+            row_to_add = [submission_date, str(user_id), discord_username, premium_amount, roles_str]
             worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
             success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** has been recorded successfully!"
             if unrounded_premium != premium_amount:
