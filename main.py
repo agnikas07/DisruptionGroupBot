@@ -317,7 +317,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
 
-            full_response = f"{success_message}\n{leaderboard_content}"
+            full_response = f"{success_message}\n\n{leaderboard_content}"
             await interaction.followup.send(full_response, ephemeral=True)
 
         except Exception as e:
