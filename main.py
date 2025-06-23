@@ -299,14 +299,15 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** has been recorded successfully!"
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
-            await interaction.followup.send(success_message, ephemeral=True)
 
             today_df = get_leaderboard_data('today')
             est_timezone = pytz.timezone('US/Eastern')
             day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
             today_title = f"📊 Today ({day_of_week}):"
             today_leaderboard = format_leaderboard_section(today_title, today_df)
-            await interaction.channel.send(today_leaderboard, ephemeral=True)
+            
+            full_response = f"{success_message}\n\n{today_leaderboard}"
+            await interaction.channel.send(full_response, ephemeral=True)
         except Exception as e:
             print(f"Error writing to Google Sheets: {e}")
             await interaction.followup.send("❌ **Error:** Could not write data to database.", ephemeral=True)
