@@ -232,7 +232,8 @@ def get_full_leaderboard_content() -> str:
     top_performer_content = format_top_performer_section(month_df)
     rising_star_content = format_rising_star_section()
 
-    day_of_week = datetime.datetime.now().strftime('%A')
+    est_timezone = pytz.timezone('US/Eastern')
+    day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
     today_title = f"📊 Today ({day_of_week}):"
     today_content = format_leaderboard_section(today_title, today_df)
 
@@ -260,7 +261,8 @@ def get_daily_leaderboard_content() -> str:
     week_df = get_leaderboard_data('week')
     month_df = get_leaderboard_data('month')
 
-    day_of_week = datetime.datetime.now().strftime('%A')
+    est_timezone = pytz.timezone('US/Eastern')
+    day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
     today_title = f"📊 Today ({day_of_week}):"
     today_content = format_leaderboard_section(today_title, today_df)
 
@@ -298,7 +300,8 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             await interaction.followup.send(success_message, ephemeral=True)
 
             today_df = get_leaderboard_data('today')
-            day_of_week = datetime.datetime.now().strftime('%A')
+            est_timezone = pytz.timezone('US/Eastern')
+            day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
             today_title = f"📊 Today ({day_of_week}):"
             today_leaderboard = format_leaderboard_section(today_title, today_df)
             await interaction.channel.send(today_leaderboard, ephemeral=True)
@@ -332,7 +335,8 @@ async def leaderboard(interaction: discord.Interaction, period: app_commands.Cho
         leaderboard_df = get_leaderboard_data(period.value)
         title = ""
         if period.value == 'today':
-            day_of_week = datetime.datetime.now().strftime('%A')
+            est_timezone = pytz.timezone('US/Eastern')
+            day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
             title = f"📊 Today ({day_of_week}):"
         elif period.value == 'week':
             title = "📅 Week-to-Date:"
