@@ -287,30 +287,39 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
         user_roles = interaction.user.roles[1:]
         roles_str = ', '.join([role.name for role in user_roles])
         premium_amount_str = self.premium.value
+        
         try:
             unrounded_premium = float(premium_amount_str.replace(',', ''))
             premium_amount = round(unrounded_premium, 2)
         except ValueError:
             await interaction.followup.send("❌ **Error:** Please enter a valid number.", ephemeral=True)
             return
+
         try:
+            leaderboard_content = ""
+            try:
+                today_df = get_leaderboard_data('today')
+                est_timezone = pytz.timezone('US/Eastern')
+                day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
+                today_title = f"📊 Today ({day_of_week}):"
+                leaderboard_content = format_leaderboard_section(today_title, today_df)
+            except Exception as e:
+                print(f"NON-CRITICAL: Leaderboard generation failed, will proceed without it. Error: {e}")
+                leaderboard_content = "\n\n*(Could not retrieve the updated leaderboard at this time.)*"
+
             row_to_add = [submission_date, str(user_id), discord_username, premium_amount, roles_str]
             worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
+            
             success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** has been recorded successfully!"
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
 
-            today_df = get_leaderboard_data('today')
-            est_timezone = pytz.timezone('US/Eastern')
-            day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
-            today_title = f"📊 Today ({day_of_week}):"
-            today_leaderboard = format_leaderboard_section(today_title, today_df)
-            
-            full_response = f"{success_message}\n\n{today_leaderboard}"
-            await interaction.channel.send(full_response, ephemeral=True)
+            full_response = f"{success_message}\n{leaderboard_content}"
+            await interaction.followup.send(full_response, ephemeral=True)
+
         except Exception as e:
-            print(f"Error writing to Google Sheets: {e}")
-            await interaction.followup.send("❌ **Error:** Could not write data to database.", ephemeral=True)
+            print(f"CRITICAL ERROR: Error writing to Google Sheets: {e}")
+            await interaction.followup.send("❌ **Error:** Could not write data to database. Please try again.", ephemeral=True)
 
 
 # --- SLASH COMMANDS ---
