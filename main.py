@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 import datetime
 import pandas as pd
 import calendar
+import time
 
 import pytz
 
@@ -296,6 +297,11 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             return
 
         try:
+            row_to_add = [submission_date, str(user_id), discord_username, premium_amount, roles_str]
+            worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
+            
+            time.sleep(2)
+
             leaderboard_content = ""
             try:
                 today_df = get_leaderboard_data('today')
@@ -307,9 +313,6 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
                 print(f"NON-CRITICAL: Leaderboard generation failed, will proceed without it. Error: {e}")
                 leaderboard_content = "\n\n*(Could not retrieve the updated leaderboard at this time.)*"
 
-            row_to_add = [submission_date, str(user_id), discord_username, premium_amount, roles_str]
-            worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
-            
             success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** has been recorded successfully!"
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
