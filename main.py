@@ -1,7 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import tasks
-from discord.ui import Modal, TextInput
+from discord.ui import Modal, TextInput, Select
 import os
 import gspread
 from dotenv import load_dotenv
@@ -19,6 +19,7 @@ POSTING_CHANNEL_ID = os.getenv('POSTING_CHANNEL_ID')
 GOOGLE_SERVICE_ACCOUNT_FILE = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
 GOOGLE_SPREADSHEET_NAME = os.getenv('GOOGLE_SPREADSHEET_NAME')
 GOOGLE_WORKSHEET_NAME = os.getenv('GOOGLE_WORKSHEET_NAME')
+GOOGLE_TEAMS_WORKSHEET_NAME = os.getenv('GOOGLE_TEAMS_WORKSHEET_NAME')
 
 
 # --- Google Sheets Setup ---
@@ -26,6 +27,7 @@ try:
     gc = gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
     sh = gc.open(GOOGLE_SPREADSHEET_NAME)
     worksheet = sh.worksheet(GOOGLE_WORKSHEET_NAME)
+    teams_worksheet = sh.worksheet(GOOGLE_TEAMS_WORKSHEET_NAME)
     print("Google Sheets connected successfully.")
 except gspread.exceptions.SpreadsheetNotFound:
     print("Error: Google Sheets spreadsheet not found. Please check the name and make sure that the spreadsheet is shared with the bot's service account email.")
@@ -45,6 +47,22 @@ tree = app_commands.CommandTree(bot)
 
 
 # --- HELPER FUNCTIONS ---
+def get_teams() -> list[str]:
+    """
+    Fetches a list of teams from the designated teams worksheet.
+    """
+    try:
+        teams_ws = sh.worksheet(GOOGLE_TEAMS_WORKSHEET_NAME)
+        team_list = teams_ws.col_values(1)
+        return [team for team in team_list[1:] if team]
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"Error: Worksheet '{GOOGLE_TEAMS_WORKSHEET_NAME}' not found. Please check the name and ensure it exists.")
+        return []
+    except Exception as e:
+        print(f"An error occurred while fetching teams: {e}")
+        return []
+
+
 def get_leaderboard_data(period: str) -> pd.DataFrame:
     """
     Fetches all sales data from the Google Sheet, processes it, and returns a
@@ -57,7 +75,7 @@ def get_leaderboard_data(period: str) -> pd.DataFrame:
         
         df = pd.DataFrame(records)
 
-        required_cols = ['Date', 'User ID', 'Name', 'Premium']
+        required_cols = ['Date', 'User ID', 'Name', 'Premium', 'Team']
         if not all(col in df.columns for col in required_cols):
             print(f"Error: Sheet is missing one of the required columns: {required_cols}")
             return pd.DataFrame()
@@ -277,8 +295,31 @@ def get_daily_leaderboard_content() -> str:
 
 
 # --- MODAL DEFINITION ---
+class TeamSelect(Select):
+    def __init__(self, teams: list[str]):
+        options = [discord.SelectOption(label=team) for team in teams]
+        if not options:
+            options = [discord.SelectOption(label="No Teams Available", description="Contact an admin to set up teams.", value="NO_TEAMS")]
+
+        super().__init__(
+            placeholder="Select your team...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            disabled=(not teams)
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+
+
 class SaleEntryModal(Modal, title='Enter Sale Details'):
     premium = TextInput(label='Annual Premium Amount', placeholder='e.g., 1250.75', required=True)
+
+    def __init__(self,teams: list[str]):
+        super().__init__()
+        self.team_select = TeamSelect(teams)
+        self.additem(self.team_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -286,6 +327,8 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
         user_id = interaction.user.id
         discord_username = interaction.user.display_name
         premium_amount_str = self.premium.value
+
+        team_selection = self.team_select.values[0]
         
         try:
             unrounded_premium = float(premium_amount_str.replace(',', ''))
@@ -295,7 +338,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             return
 
         try:
-            row_to_add = [submission_date, str(user_id), discord_username, premium_amount]
+            row_to_add = [submission_date, str(user_id), discord_username, premium_amount, team_selection]
             worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
             
             time.sleep(2)
@@ -326,7 +369,12 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
 # --- SLASH COMMANDS ---
 @tree.command(name="sales", description="Press enter to log a new sale.")
 async def sales_command(interaction: discord.Interaction):
-    await interaction.response.send_modal(SaleEntryModal())
+    teams = get_teams()
+    if not teams: 
+        await interaction.response.send_message("❌ **Error:** No teams available. Please contact an admin to set up teams.", ephemeral=True)
+        return
+    
+    await interaction.response.send_modal(SaleEntryModal(teams=teams))
 
 
 @tree.command(name="leaderboard", description="Display sales leaderboards.")
