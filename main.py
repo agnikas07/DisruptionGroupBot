@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import datetime
 import pandas as pd
 import calendar
-import time
+import asyncio
 
 import pytz
 
@@ -36,6 +36,9 @@ try:
 except gspread.exceptions.SpreadsheetNotFound:
     print("Error: Google Sheets spreadsheet not found. Please check the name and make sure that the spreadsheet is shared with the bot's service account email.")
     exit()
+except gspread.exceptions.WorksheetNotFound:
+    print(f"Error: A required worksheet was not found. Please ensure both '{GOOGLE_WORKSHEET_NAME}' and '{GOOGLE_TEAMS_WORKSHEET_NAME}' worksheets exist.")
+    exit()
 except FileNotFoundError:
     print(f"Error: Google Sheets credentials file '{GOOGLE_SERVICE_ACCOUNT_FILE}' not found. Please ensure the file is in the correct location.")
     exit()
@@ -57,9 +60,6 @@ def _fetch_teams_from_sheet() -> list[str]:
         teams_ws = sh.worksheet(GOOGLE_TEAMS_WORKSHEET_NAME)
         team_list = teams_ws.col_values(1)
         return [team for team in team_list[1:] if team]
-    except gspread.exceptions.WorksheetNotFound:
-        print(f"Error: Worksheet '{GOOGLE_TEAMS_WORKSHEET_NAME}' not found. Please check the name and ensure it exists.")
-        return []
     except Exception as e:
         print(f"An error occurred while fetching teams: {e}")
         return []
@@ -67,7 +67,7 @@ def _fetch_teams_from_sheet() -> list[str]:
 
 def get_teams() -> list[str]:
     """
-    Fetches a list of teams from the designated teams worksheet.
+    Fetches a list of teams from the in-memory cache.
     """
     return TEAMS_CACHE
 
@@ -87,7 +87,10 @@ def get_leaderboard_data(period: str) -> pd.DataFrame:
         required_cols = ['Date', 'User ID', 'Name', 'Premium', 'Team']
         if not all(col in df.columns for col in required_cols):
             print(f"Error: Sheet is missing one of the required columns: {required_cols}")
-            return pd.DataFrame()
+            if 'Team' not in df.columns:
+                df['Team'] = 'N/A'
+            if not all(col in df.columns for col in required_cols):
+                return pd.DataFrame()
         
         df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         df['Premium'] = pd.to_numeric(df['Premium'], errors='coerce')
@@ -207,13 +210,13 @@ def format_rising_star_section() -> str:
         df_this_week = df[df['Date'] >= start_of_this_week]
         df_last_week = df[(df['Date'] >= start_of_last_week) & (df['Date'] < start_of_this_week)]
 
-        sales_this_week = df_this_week.groupby('User ID')['Premium'].sum().reset_index()
-        sales_last_week = df_last_week.groupby('User ID')['Premium'].sum().reset_index()
+        sales_this_week = df_this_week.groupby('User ID')['Premium'].sum()
+        sales_last_week = df_last_week.groupby('User ID')['Premium'].sum()
 
         if sales_last_week.empty:
             return ""
 
-        merged = pd.merge(sales_this_week, sales_last_week, on='User ID', how='inner', suffixes=('_this', '_last'))
+        merged = pd.merge(sales_this_week.to_frame(), sales_last_week.to_frame(), on='User ID', how='inner', suffixes=('_this', '_last'))
         
         if merged.empty:
             return ""
@@ -225,20 +228,14 @@ def format_rising_star_section() -> str:
         if rising_stars.empty or rising_stars.iloc[0]['Growth'] <= 0:
             return ""
 
-        top_riser_row = rising_stars.iloc[[0]] 
+        top_riser_id = rising_stars.index[0]
 
-        user_info = df[['User ID', 'Name']].drop_duplicates(subset=['User ID'])
-        top_riser_with_name = pd.merge(top_riser_row, user_info, on='User ID', how='left')
-
-        if top_riser_with_name.empty:
-            return ""
+        user_info = df[df['User ID'] == top_riser_id].iloc[0]
         
-        top_riser = top_riser_with_name.iloc[0]
-        
-        user_mention = f"<@{str(top_riser['User ID']).split('.')[0]}>"
-        this_week_total = top_riser['Premium_this']
-        last_week_total = top_riser['Premium_last']
-        growth_percent = top_riser['Growth']
+        user_mention = f"<@{str(user_info['User ID']).split('.')[0]}>"
+        this_week_total = sales_this_week[top_riser_id]
+        last_week_total = sales_last_week[top_riser_id]
+        growth_percent = rising_stars.iloc[0]['Growth']
         
         title = f"🌟 **Rising Star:** {user_mention}"
         line1 = f"${this_week_total:,.2f} this week (↑{growth_percent:.0f}% from last week)"
@@ -271,15 +268,15 @@ def get_full_leaderboard_content() -> str:
     month_title = "🥇 Month-to-Date:"
     month_content = format_leaderboard_section(month_title, month_df)
 
-    content_sections = []
-    if top_performer_content: 
-        content_sections.append(top_performer_content)
-    content_sections.append(today_content)
-    content_sections.append(week_content)
-    content_sections.append(month_content)
-    if rising_star_content:
-        content_sections.append(rising_star_content)
-
+    content_sections = [
+        c for c in [
+            top_performer_content,
+            today_content,
+            week_content,
+            month_content,
+            rising_star_content,
+        ] if c
+    ]
     return "\n\n".join(content_sections)
 
 
@@ -348,13 +345,15 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
 
         try:
             row_to_add = [submission_date, str(user_id), discord_username, premium_amount, team_selection]
-            worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
+            # Run the synchronous gspread call in an executor to avoid blocking
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, lambda: worksheet.append_row(row_to_add, value_input_option='USER_ENTERED'))
             
-            time.sleep(2)
+            await asyncio.sleep(2) # Give sheets a moment to update
 
             leaderboard_content = ""
             try:
-                today_df = get_leaderboard_data('today')
+                today_df = await loop.run_in_executor(None, get_leaderboard_data, 'today')
                 est_timezone = pytz.timezone('US/Eastern')
                 day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
                 today_title = f"📊 Today ({day_of_week}):"
@@ -363,7 +362,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
                 print(f"NON-CRITICAL: Leaderboard generation failed, will proceed without it. Error: {e}")
                 leaderboard_content = "\n\n*(Could not retrieve the updated leaderboard at this time.)*"
 
-            success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** has been recorded successfully!"
+            success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** for team **{team_selection}** has been recorded successfully!"
             if unrounded_premium != premium_amount:
                 success_message += f"\n*(Note: Your input of `{unrounded_premium}` was rounded to two decimal places.)*"
 
@@ -380,7 +379,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
 async def sales_command(interaction: discord.Interaction):
     teams = get_teams()
     if not teams: 
-        await interaction.response.send_message("❌ **Error:** No teams available. Please contact an admin to set up teams.", ephemeral=True)
+        await interaction.response.send_message("❌ **Error:** The list of teams is currently unavailable. Please have an admin check the bot's configuration or try again in a moment.", ephemeral=True)
         return
     
     await interaction.response.send_modal(SaleEntryModal(teams=teams))
@@ -397,24 +396,20 @@ async def sales_command(interaction: discord.Interaction):
 async def leaderboard(interaction: discord.Interaction, period: app_commands.Choice[str]):
     await interaction.response.defer(thinking=True, ephemeral=False)
 
+    loop = asyncio.get_running_loop()
     if period.value == 'full':
-        content = get_full_leaderboard_content()
-        await interaction.followup.send(content)
-
+        content = await loop.run_in_executor(None, get_full_leaderboard_content)
     else:
-        leaderboard_df = get_leaderboard_data(period.value)
-        title = ""
-        if period.value == 'today':
-            est_timezone = pytz.timezone('US/Eastern')
-            day_of_week = datetime.datetime.now(est_timezone).strftime('%A')
-            title = f"📊 Today ({day_of_week}):"
-        elif period.value == 'week':
-            title = "📅 Week-to-Date:"
-        elif period.value == 'month':
-            title = "🥇 Month-to-Date:"
-
+        leaderboard_df = await loop.run_in_executor(None, get_leaderboard_data, period.value)
+        title_map = {
+            'today': f"📊 Today ({datetime.datetime.now(pytz.timezone('US/Eastern')).strftime('%A')}):",
+            'week': "📅 Week-to-Date:",
+            'month': "🥇 Month-to-Date:"
+        }
+        title = title_map.get(period.value, "Leaderboard")
         content = format_leaderboard_section(title, leaderboard_df)
-        await interaction.followup.send(content)
+    
+    await interaction.followup.send(content)
 
 
 # ---Background Tasks---
@@ -424,11 +419,6 @@ post_time = datetime.time(hour=8, minute=0, tzinfo=est_timezone)
 
 @tasks.loop(time=post_time)
 async def daily_leaderboard_post():
-    """
-    This task runs once a day at the specified time and posts the leaderboard.
-    """
-    await bot.wait_until_ready()
-
     channel_id = POSTING_CHANNEL_ID
     if not channel_id:
         print("Error: POSTING_CHANNEL_ID is not set. Please check your .env file.")
@@ -442,18 +432,23 @@ async def daily_leaderboard_post():
     today_weekday = datetime.datetime.now(est_timezone).weekday()
 
     print(f"Daily post task running on weekday {today_weekday}")
-
+    
+    loop = asyncio.get_running_loop()
     if today_weekday == 4:
         print("Happy Friday! Posting full leaderboard.")
-        content = get_full_leaderboard_content()
+        content = await loop.run_in_executor(None, get_full_leaderboard_content)
     else:
         print("Posting standard daily leaderboard.")
-        content = get_daily_leaderboard_content()
+        content = await loop.run_in_executor(None, get_daily_leaderboard_content)
 
     if content and content.strip():
         await channel.send(content)
     else:
         print("No content to post. Skipping post.")
+
+@daily_leaderboard_post.before_loop
+async def before_daily_post():
+    await bot.wait_until_ready()
 
 @tasks.loop(minutes=10)
 async def update_teams_cache():
@@ -466,9 +461,14 @@ async def update_teams_cache():
     teams = await loop.run_in_executor(None, _fetch_teams_from_sheet)
     if teams:
         TEAMS_CACHE = teams
-        print(f"Teams cache updated: {TEAMS_CACHE}")
+        print(f"✅ Teams cache updated with {len(teams)} teams.")
     else:
-        print("No teams found or an error occurred while fetching teams.")
+        print("⚠️ Could not update teams cache. No teams found or an error occurred.")
+
+@update_teams_cache.before_loop
+async def before_cache_update():
+    """Wait until the bot is logged in and ready before starting the cache loop."""
+    await bot.wait_until_ready()
 
 
 # --- BOT EVENTS ---
@@ -478,19 +478,12 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id}).")
     print("Bot is ready and slash commands are synced.")
     print("------")
-    print("Performing initial teams cache population...")
-    global TEAMS_CACHE
-    loop = bot.loop
-    teams = await loop.run_in_executor(None, _fetch_teams_from_sheet)
-    if teams:
-        TEAMS_CACHE = teams
-        print(f"✅ Initial cache populated with {len(TEAMS_CACHE)} teams.")
-    else:
-        print("⚠️ Could not populate initial cache. No teams found or an error occurred.")
-    daily_leaderboard_post.start()
-    print("Daily leaderboard task started.")
+    
+    # Start all background tasks. They will run once when ready.
     update_teams_cache.start()
-    print("Teams cache update task started.")
+    daily_leaderboard_post.start()
+    
+    print("All background tasks started.")
     print("------")
 
 
