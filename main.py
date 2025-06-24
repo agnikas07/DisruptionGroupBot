@@ -328,7 +328,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
     def __init__(self,teams: list[str]):
         super().__init__()
         self.team_select = TeamSelect(teams)
-        self.additem(self.team_select)
+        self.add_item(self.team_select)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
@@ -478,9 +478,19 @@ async def on_ready():
     print(f"Logged in as {bot.user} (ID: {bot.user.id}).")
     print("Bot is ready and slash commands are synced.")
     print("------")
+    print("Performing initial teams cache population...")
+    global TEAMS_CACHE
+    loop = bot.loop
+    teams = await loop.run_in_executor(None, _fetch_teams_from_sheet)
+    if teams:
+        TEAMS_CACHE = teams
+        print(f"✅ Initial cache populated with {len(TEAMS_CACHE)} teams.")
+    else:
+        print("⚠️ Could not populate initial cache. No teams found or an error occurred.")
     daily_leaderboard_post.start()
-    update_teams_cache.start()
     print("Daily leaderboard task started.")
+    update_teams_cache.start()
+    print("Teams cache update task started.")
     print("------")
 
 
