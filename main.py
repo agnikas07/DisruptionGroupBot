@@ -285,8 +285,6 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
         submission_date = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         user_id = interaction.user.id
         discord_username = interaction.user.display_name
-        user_roles = interaction.user.roles[1:]
-        roles_str = ', '.join([role.name for role in user_roles])
         premium_amount_str = self.premium.value
         
         try:
@@ -297,7 +295,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             return
 
         try:
-            row_to_add = [submission_date, str(user_id), discord_username, premium_amount, roles_str]
+            row_to_add = [submission_date, str(user_id), discord_username, premium_amount]
             worksheet.append_row(row_to_add, value_input_option='USER_ENTERED')
             
             time.sleep(2)
