@@ -22,6 +22,10 @@ GOOGLE_WORKSHEET_NAME = os.getenv('GOOGLE_WORKSHEET_NAME')
 GOOGLE_TEAMS_WORKSHEET_NAME = os.getenv('GOOGLE_TEAMS_WORKSHEET_NAME')
 
 
+# --- CACHE ---
+TEAMS_CACHE = []
+
+
 # --- Google Sheets Setup ---
 try:    
     gc = gspread.service_account(filename=GOOGLE_SERVICE_ACCOUNT_FILE)
@@ -47,10 +51,8 @@ tree = app_commands.CommandTree(bot)
 
 
 # --- HELPER FUNCTIONS ---
-def get_teams() -> list[str]:
-    """
-    Fetches a list of teams from the designated teams worksheet.
-    """
+def _fetch_teams_from_sheet() -> list[str]:
+    """Synchronously fetches the list of teams from the Google Sheet."""
     try:
         teams_ws = sh.worksheet(GOOGLE_TEAMS_WORKSHEET_NAME)
         team_list = teams_ws.col_values(1)
@@ -61,6 +63,13 @@ def get_teams() -> list[str]:
     except Exception as e:
         print(f"An error occurred while fetching teams: {e}")
         return []
+
+
+def get_teams() -> list[str]:
+    """
+    Fetches a list of teams from the designated teams worksheet.
+    """
+    return TEAMS_CACHE
 
 
 def get_leaderboard_data(period: str) -> pd.DataFrame:
@@ -408,6 +417,7 @@ async def leaderboard(interaction: discord.Interaction, period: app_commands.Cho
         await interaction.followup.send(content)
 
 
+# ---Background Tasks---
 est_timezone = pytz.timezone('US/Eastern')
 post_time = datetime.time(hour=8, minute=0, tzinfo=est_timezone)
 
@@ -445,6 +455,21 @@ async def daily_leaderboard_post():
     else:
         print("No content to post. Skipping post.")
 
+@tasks.loop(minutes=10)
+async def update_teams_cache():
+    """
+    Periodically updates the teams cache from the Google Sheet.
+    """
+    global TEAMS_CACHE
+    print("Updating teams cache...")
+    loop = bot.loop
+    teams = await loop.run_in_executor(None, _fetch_teams_from_sheet)
+    if teams:
+        TEAMS_CACHE = teams
+        print(f"Teams cache updated: {TEAMS_CACHE}")
+    else:
+        print("No teams found or an error occurred while fetching teams.")
+
 
 # --- BOT EVENTS ---
 @bot.event
@@ -454,6 +479,7 @@ async def on_ready():
     print("Bot is ready and slash commands are synced.")
     print("------")
     daily_leaderboard_post.start()
+    update_teams_cache.start()
     print("Daily leaderboard task started.")
     print("------")
 
