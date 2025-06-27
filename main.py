@@ -122,7 +122,7 @@ def process_leaderboard_data(records: list, period: str) -> pd.DataFrame:
         SaleCount=('Premium', 'count'),
     ).reset_index()
 
-    leaderboard_sorted = leaderboard.sort_values('TotalPremium', ascending=False).head(10)
+    leaderboard_sorted = leaderboard.sort_values('TotalPremium', ascending=False).head(20)
     leaderboard_sorted.reset_index(drop=True, inplace=True)
     leaderboard_sorted.index += 1
     return leaderboard_sorted
