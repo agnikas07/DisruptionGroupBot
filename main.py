@@ -315,9 +315,8 @@ async def leaderboard(interaction: discord.Interaction, period: app_commands.Cho
 
 @tree.command(name="teams", description="Display team sales leaderboards.")
 async def teams_leaderboard(interaction: discord.Interaction):
-    await interaction.response.defer(thinking=True, ephemeral=True)
+    await interaction.response.defer(thinking=True, ephemeral=False)
 
-    # Re-push
     records = await fetch_all_records_async()
 
     today_df, week_df, month_df = await asyncio.gather(
