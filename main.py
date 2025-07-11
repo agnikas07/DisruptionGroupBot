@@ -237,20 +237,38 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
 
         try:
             await asyncio.to_thread(worksheet.append_row, row_to_add, value_input_option='USER_ENTERED')
-            await asyncio.sleep(2)
+            
+            success_message = f"✅ **Success:** Your sale of **{premium_amount:,.2f}** has been recorded!.\n"
+            await interaction.followup.send(success_message, ephemeral=True)
 
-            records = await fetch_all_records_async()
-            today_df = await asyncio.to_thread(process_leaderboard_data, records, 'today')
+            posting_channel_id_str = POSTING_CHANNEL_ID
+            if not posting_channel_id_str:
+                print("Error: POSTING_CHANNEL_ID is not set.")
+                return
             
-            day_of_week = datetime.datetime.now(pytz.timezone('US/Eastern')).strftime('%A')
-            leaderboard_content = format_leaderboard_section(f"📊 Today ({day_of_week}):", today_df)
-            
-            success_message = f"✅ **Success:** Your sale of **${premium_amount:,.2f}** for team **{team_selection}** has been recorded!"
-            full_response = f"{success_message}\n\n{leaderboard_content}"
-            await interaction.followup.send(full_response, ephemeral=True)
+            try:
+                posting_channel = bot.get_channel(int(posting_channel_id_str))
+                if posting_channel:
+                    embed = discord.Embed(
+                        title="💰 New Sale!",
+                        description=f"{interaction.user.mention} just made a sale!",
+                        color=discord.Color.blue()
+                    )
+                    embed.add_field(name="Sale Amount", value=f"${premium_amount:,.2f}", inline=False)
+                    embed.set_thumbnail(url=interaction.user.display_avatar.url)
+                    embed.set_footer(text=f"Team: {team_selection}")
+                    embed.timestamp = datetime.datetime.now(pytz.utc)
+
+                    await posting_channel.send(embed=embed)
+                else:
+                    print(f"Error: Channel with ID {posting_channel_id_str} not found.")
+            except Exception as e:
+                print(f"An error occurred while sending the sale notification: {e}")
+
         except Exception as e:
-            print(f"CRITICAL ERROR: Error during sale submission: {e}")
-            await interaction.followup.send("❌ **Error:** Could not write data to the database. Please try again later.", ephemeral=True)
+            print(f"CRITICAL ERROR: Error during sale entry: {e}")
+            await interaction.followup.send("❌ **Error:** An unexpected error occurred while recording your sale. Please try again later.", ephemeral=True)
+            return
 
 
 class TeamSelect(Select):
