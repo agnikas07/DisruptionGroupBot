@@ -63,7 +63,10 @@ async def fetch_teams_and_roles_from_sheet_async() -> list[str]:
     try:
         print("Fetching teams from Google Sheet...")
         all_values = await asyncio.to_thread(teams_worksheet.get_all_values)
-        new_cache = {row[0]: row[1] for row in all_values if row and len(row) > 1 and row[0] and row[1]}
+        new_cache = {
+            row[0]: {"role": row[1], "channel": row[2]}
+            for row in all_values if row and len(row) > 2 and row[0] and row[1] and row[2]
+        }
         if new_cache:
             TEAMS_AND_ROLES_CACHE = new_cache
             print(f"✅ Teams cache updated with {len(TEAMS_AND_ROLES_CACHE)} teams.")
@@ -198,7 +201,8 @@ def format_team_leaderboard_section(title: str, leaderboard_df: pd.DataFrame) ->
         premium_formatted = f"${row['TotalPremium']:,.2f}"
         sale_count = int(row['SaleCount'])
 
-        role_id = TEAMS_AND_ROLES_CACHE.get(team_name)
+        team_data = TEAMS_AND_ROLES_CACHE.get(team_name, {})
+        role_id = team_data.get('role')
 
         team_mention = f"<@&{role_id}>" if role_id else team_name
 
@@ -398,6 +402,60 @@ async def daily_leaderboard_post():
     await channel.send(content)
 
 
+@tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=pytz.timezone('US/Eastern')))
+async def daily_team_leaderboards_post():
+    print("Executing daily team-specific leaderboard post...")
+    all_records = await fetch_all_records_async()
+    if not all_records:
+        print("No records found for daily team leaderboard post.")
+        return
+    
+    all_records_df = pd.DataFrame(all_records)
+
+    for team_name, team_data in TEAMS_AND_ROLES_CACHE.items():
+        channel_id = team_data.get('channel')
+        if not channel_id:
+            print(f"Warning: No channel found for team '{team_name}'. Skipping post.")
+            continue
+
+        channel = bot.get_channel(int(channel_id))
+        if not channel:
+            print(f"Error: Channel with ID {channel_id} not found for team '{team_name}'. Skipping post.")
+            continue
+
+        team_records_df = all_records_df[all_records_df['Team'] == team_name]
+        if team_records_df.empty:
+            print(f"No records found for team '{team_name}'.")
+            await channel.send(f"**🏆 Daily Leaderboard for {team_name} 🏆**\n\nNo sales recorded yet for today, this week, or this month.")
+            continue
+
+        team_records = team_records_df.to_dict('records')
+
+        today_df, week_df, month_df = await asyncio.gather(
+            asyncio.to_thread(process_team_leaderboard_data, team_records, 'today'),
+            asyncio.to_thread(process_team_leaderboard_data, team_records, 'week'),
+            asyncio.to_thread(process_team_leaderboard_data, team_records, 'month')
+        )
+
+        est_timezone = pytz.timezone('US/Eastern')
+        now = datetime.datetime.now(est_timezone)
+        today_title = f"📊 Today ({now.strftime('%A')}):"
+
+        today_content = format_team_leaderboard_section(today_title, today_df)
+        week_content = format_team_leaderboard_section("📅 Week-to-Date:", week_df)
+        month_content = format_team_leaderboard_section("🥇 Month-to-Date:", month_df)
+
+        content = f"**🏆 Daily Leaderboard for {team_name} 🏆**\n\n{today_content}\n\n{week_content}\n\n{month_content}"
+
+        try:
+            await channel.send(content)
+            print(f"Successfully posted daily leaderboard for team '{team_name}' in channel {channel.name}.")
+        except Exception as e:
+            print(f"Error posting daily leaderboard for team '{team_name}' in channel {channel.name}: {e}")
+
+        await asyncio.sleep(1)
+
+
 # --- BOT EVENTS ---
 @bot.event
 async def on_ready():
@@ -410,6 +468,7 @@ async def on_ready():
     
     update_teams_cache_loop.start()
     daily_leaderboard_post.start()
+    daily_team_leaderboards_post.start()
     
     print("All background tasks started.")
     print("------")
