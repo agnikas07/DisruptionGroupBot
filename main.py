@@ -65,7 +65,7 @@ async def fetch_teams_and_roles_from_sheet_async() -> list[str]:
         all_values = await asyncio.to_thread(teams_worksheet.get_all_values)
         new_cache = {
             row[0]: {"role": row[1], "channel": row[2]}
-            for row in all_values if row and len(row) > 2 and row[0] and row[1] and row[2]
+            for row in all_values[1:] if row and len(row) > 2 and row[0] and row[1] and row[2]
         }
         if new_cache:
             TEAMS_AND_ROLES_CACHE = new_cache
