@@ -360,6 +360,12 @@ async def teams_leaderboard(interaction: discord.Interaction):
     await interaction.followup.send(content)
 
 
+# @tree.command(name="dev", description="Developer command to test bot functionality.")
+# async def dev_command(interaction: discord.Interaction):
+#     await interaction.response.send_message("Manually triggered developer command. This is a placeholder for testing purposes.", ephemeral=True)
+#     asyncio.create_task(run_daily_team_leaderboards_post())
+
+
 # --- BACKGROUND TASKS ---
 @tasks.loop(minutes=10)
 async def update_teams_cache_loop():
@@ -402,8 +408,7 @@ async def daily_leaderboard_post():
     await channel.send(content)
 
 
-@tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=pytz.timezone('US/Eastern')))
-async def daily_team_leaderboards_post():
+async def run_daily_team_leaderboards_post():
     print("Executing daily team-specific leaderboard post...")
     all_records = await fetch_all_records_async()
     if not all_records:
@@ -432,18 +437,18 @@ async def daily_team_leaderboards_post():
         team_records = team_records_df.to_dict('records')
 
         today_df, week_df, month_df = await asyncio.gather(
-            asyncio.to_thread(process_team_leaderboard_data, team_records, 'today'),
-            asyncio.to_thread(process_team_leaderboard_data, team_records, 'week'),
-            asyncio.to_thread(process_team_leaderboard_data, team_records, 'month')
+            asyncio.to_thread(process_leaderboard_data, team_records, 'today'),
+            asyncio.to_thread(process_leaderboard_data, team_records, 'week'),
+            asyncio.to_thread(process_leaderboard_data, team_records, 'month')
         )
 
         est_timezone = pytz.timezone('US/Eastern')
         now = datetime.datetime.now(est_timezone)
         today_title = f"📊 Today ({now.strftime('%A')}):"
 
-        today_content = format_team_leaderboard_section(today_title, today_df)
-        week_content = format_team_leaderboard_section("📅 Week-to-Date:", week_df)
-        month_content = format_team_leaderboard_section("🥇 Month-to-Date:", month_df)
+        today_content = format_leaderboard_section(today_title, today_df)
+        week_content = format_leaderboard_section("📅 Week-to-Date:", week_df)
+        month_content = format_leaderboard_section("🥇 Month-to-Date:", month_df)
 
         content = f"**🏆 Daily Leaderboard for {team_name} 🏆**\n\n{today_content}\n\n{week_content}\n\n{month_content}"
 
@@ -454,6 +459,12 @@ async def daily_team_leaderboards_post():
             print(f"Error posting daily leaderboard for team '{team_name}' in channel {channel.name}: {e}")
 
         await asyncio.sleep(1)
+
+
+@tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=pytz.timezone('US/Eastern')))
+async def daily_team_leaderboards_post():
+    print("Executing daily team-specific leaderboard post...")
+    await run_daily_team_leaderboards_post()
 
 
 # --- BOT EVENTS ---
