@@ -55,7 +55,8 @@ tree = app_commands.CommandTree(bot)
 # --- ASYNCHRONOUS HELPER FUNCTIONS ---
 async def fetch_all_records_async():
     """Asynchronously fetches all records from the main worksheet."""
-    return await asyncio.to_thread(worksheet.get_all_records)
+    expected_headers = ['Date', 'User ID', 'Name', 'Premium', 'Team']
+    return await asyncio.to_thread(worksheet.get_all_records, expected_headers=expected_headers)
 
 async def fetch_teams_and_roles_from_sheet_async() -> list[str]:
     """Asynchronously fetches the list of teams and role IDs and updates the cache."""
