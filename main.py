@@ -371,7 +371,7 @@ async def teams_leaderboard(interaction: discord.Interaction):
 async def update_teams_cache_loop():
     await fetch_teams_and_roles_from_sheet_async()
 
-@tasks.loop(time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone('US/Eastern')))
+@tasks.loop(time=datetime.time(hour=23, minute=30, tzinfo=pytz.timezone('US/Eastern')))
 async def daily_leaderboard_post():
     channel_id_str = POSTING_CHANNEL_ID
     if not channel_id_str:
