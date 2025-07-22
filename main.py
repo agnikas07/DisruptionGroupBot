@@ -461,7 +461,7 @@ async def run_daily_team_leaderboards_post():
         await asyncio.sleep(1)
 
 
-@tasks.loop(time=datetime.time(hour=12, minute=0, tzinfo=pytz.timezone('US/Eastern')))
+@tasks.loop(time=datetime.time(hour=13, minute=15, tzinfo=pytz.timezone('US/Eastern')))
 async def daily_team_leaderboards_post():
     print("Executing daily team-specific leaderboard post...")
     await run_daily_team_leaderboards_post()
