@@ -97,13 +97,13 @@ def process_leaderboard_data(records: list, period: str) -> pd.DataFrame:
             print(f"Error: Sheet is missing required column: '{col}'")
             return pd.DataFrame()
 
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize('US/Eastern')
     df['Premium'] = pd.to_numeric(df['Premium'], errors='coerce')
     df['User ID'] = df['User ID'].astype(str)
     df.dropna(subset=['Date', 'Premium', 'User ID'], inplace=True)
     df = df[df['User ID'] != '']
 
-    now = pd.Timestamp.now(tz='UTC').tz_convert(None)
+    now = pd.Timestamp.now(tz='US/Eastern')
 
     if period == 'today':
         start_date = now.normalize()
@@ -157,12 +157,12 @@ def process_team_leaderboard_data(records: list, period: str) -> pd.DataFrame:
         if col not in df.columns:
             print(f"Error: sheet is missing required column: {col}")
 
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize('UTC')
     df['Premium'] = pd.to_numeric(df['Premium'], errors='coerce')
     df.dropna(subset=['Date', 'Premium', 'Team'], inplace=True)
     df = df[df['Team'] != '']
 
-    now = pd.Timestamp.now(tz='UTC').tz_convert(None)
+    now = pd.Timestamp.now(tz='US/Eastern')
 
     if period == 'today':
         start_date = now.normalize()
