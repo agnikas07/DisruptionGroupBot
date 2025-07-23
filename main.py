@@ -233,7 +233,7 @@ class SaleEntryModal(Modal, title='Enter Sale Details'):
             return
 
         row_to_add = [
-            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            datetime.datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d %H:%M:%S"),
             str(interaction.user.id),
             interaction.user.display_name,
             premium_amount,
@@ -372,7 +372,7 @@ async def teams_leaderboard(interaction: discord.Interaction):
 async def update_teams_cache_loop():
     await fetch_teams_and_roles_from_sheet_async()
 
-@tasks.loop(time=datetime.time(hour=23, minute=30, tzinfo=pytz.timezone('US/Eastern')))
+@tasks.loop(time=datetime.time(hour=22, minute=30, tzinfo=pytz.timezone('US/Eastern')))
 async def daily_leaderboard_post():
     channel_id_str = POSTING_CHANNEL_ID
     if not channel_id_str:
@@ -462,7 +462,7 @@ async def run_daily_team_leaderboards_post():
         await asyncio.sleep(1)
 
 
-@tasks.loop(time=datetime.time(hour=13, minute=15, tzinfo=pytz.timezone('US/Eastern')))
+@tasks.loop(time=datetime.time(hour=22, minute=15, tzinfo=pytz.timezone('US/Eastern')))
 async def daily_team_leaderboards_post():
     print("Executing daily team-specific leaderboard post...")
     await run_daily_team_leaderboards_post()
