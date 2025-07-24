@@ -131,19 +131,19 @@ def process_leaderboard_data(records: list, period: str) -> pd.DataFrame:
     leaderboard_sorted.index += 1
     return leaderboard_sorted
 
-def format_leaderboard_section(title: str, leaderboard_df: pd.DataFrame) -> str:
-    """Formats a leaderboard DataFrame into a string for Discord."""
-    if leaderboard_df.empty:
-        return f"**{title}**\n*No entries yet for this period.*"
+# def format_leaderboard_section(title: str, leaderboard_df: pd.DataFrame) -> str:
+#     """Formats a leaderboard DataFrame into a string for Discord."""
+#     if leaderboard_df.empty:
+#         return f"**{title}**\n*No entries yet for this period.*"
     
-    lines = [f"**{title}**"]
-    for rank, row in leaderboard_df.iterrows():
-        user_id_clean = str(row['User ID']).split('.')[0]
-        user_mention = f"<@{user_id_clean}>"
-        premium_formatted = f"${row['TotalPremium']:,.2f}"
-        sale_count = int(row['SaleCount'])
-        lines.append(f"{rank}. {user_mention}: {premium_formatted} | {sale_count} FP")
-    return "\n".join(lines)
+#     lines = [f"**{title}**"]
+#     for rank, row in leaderboard_df.iterrows():
+#         user_id_clean = str(row['User ID']).split('.')[0]
+#         user_mention = f"<@{user_id_clean}>"
+#         premium_formatted = f"${row['TotalPremium']:,.2f}"
+#         sale_count = int(row['SaleCount'])
+#         lines.append(f"{rank}. {user_mention}: {premium_formatted} | {sale_count} FP")
+#     return "\n".join(lines)
 
 
 def process_team_leaderboard_data(records: list, period: str) -> pd.DataFrame:
@@ -191,24 +191,67 @@ def process_team_leaderboard_data(records: list, period: str) -> pd.DataFrame:
     return team_leaderboard_sorted
 
 
-def format_team_leaderboard_section(title: str, leaderboard_df: pd.DataFrame) -> str:
-    """Formats a team leaderboard DataFrame into a string for Discord."""
-    if leaderboard_df.empty:
-        return f"**{title}**\n*No entries yet for this period.*"
+# def format_team_leaderboard_section(title: str, leaderboard_df: pd.DataFrame) -> str:
+#     """Formats a team leaderboard DataFrame into a string for Discord."""
+#     if leaderboard_df.empty:
+#         return f"**{title}**\n*No entries yet for this period.*"
     
-    lines = [f"**{title}**"]
+#     lines = [f"**{title}**"]
+#     for rank, row in leaderboard_df.iterrows():
+#         team_name = row['Team']
+#         premium_formatted = f"${row['TotalPremium']:,.2f}"
+#         sale_count = int(row['SaleCount'])
+
+#         team_data = TEAMS_AND_ROLES_CACHE.get(team_name, {})
+#         role_id = team_data.get('role')
+
+#         team_mention = f"<@&{role_id}>" if role_id else team_name
+
+#         lines.append(f"{rank}. {team_mention}: {premium_formatted} | {sale_count} FP")
+#     return "\n".join(lines)
+
+
+def create_leaderboard_embed(title: str, leaderboard_df: pd.DataFrame, leaderboard_type: str, team_name_for_title: str = None) -> discord.Embed:
+    """
+    Formats a leaderboard DataFrame into a Discord embed.
+    """
+
+    full_title = f"🏆 Daily Leaderboard for {team_name_for_title} 🏆" if team_name_for_title else title
+    embed = discord.Embed(title=full_title, color=discord.Color.gold())
+
+    subtitle = title if team_name_for_title else None
+
+    if leaderboard_df.empty:
+        description = "*No entries yet for this period.*"
+        if subtitle:
+            embed.add_field(name=subtitle, value=description, inline=False)
+        else:
+            embed.description = description
+        return embed
+    
+    lines = []
     for rank, row in leaderboard_df.iterrows():
-        team_name = row['Team']
-        premium_formatted = f"${row['TotalPremium']:,.2f}"
+        premium_formatted = f"${row["TotalPremium"]:,.2f}"
         sale_count = int(row['SaleCount'])
 
-        team_data = TEAMS_AND_ROLES_CACHE.get(team_name, {})
-        role_id = team_data.get('role')
+        if leaderboard_type == 'user':
+            user_id_clean = str(row['User ID']).split('.')[0]
+            mention = f"<@{user_id_clean}>"
+            lines.append(f"{rank}. {mention}: {premium_formatted} | {sale_count} FP")
+        elif leaderboard_type == 'team':
+            team_name = row['Team']
+            team_data = TEAMS_AND_ROLES_CACHE.get(team_name, {})
+            role_id = team_data.get('role')
+            mention = f"<@&{role_id}>" if role_id else team_name
+            lines.append(f"{rank}. {mention}: {premium_formatted} | {sale_count} FP")
 
-        team_mention = f"<@&{role_id}>" if role_id else team_name
+    description = "\n".join(lines)
+    if subtitle:
+        embed.add_field(name=subtitle, value=description, inline=False)
+    else:
+        embed.description = description
 
-        lines.append(f"{rank}. {team_mention}: {premium_formatted} | {sale_count} FP")
-    return "\n".join(lines)
+    return embed
 
 
 # --- UI COMPONENTS (RE-ARCHITECTED) ---
@@ -325,15 +368,19 @@ async def leaderboard(interaction: discord.Interaction, period: app_commands.Cho
     records = await fetch_all_records_async()
     leaderboard_df = await asyncio.to_thread(process_leaderboard_data, records, period.value)
 
+    est_timezone = pytz.timezone('US/Eastern')
+    now = datetime.datetime.now(est_timezone)
+    
     title_map = {
-        'today': f"📊 Today ({datetime.datetime.now(pytz.timezone('US/Eastern')).strftime('%A')}):",
-        'week': "📅 Week-to-Date:",
-        'month': "🥇 Month-to-Date:",
-        'full': "🏆 All-Time Leaderboard:"
+        'today': f"📊 Today's Leaderboard ({now.strftime('%A')})",
+        'week': "📅 Week-to-Date Leaderboard",
+        'month': "🥇 Month-to-Date Leaderboard",
+        'full': "🏆 All-Time Leaderboard"
     }
     title = title_map.get(period.value)
-    content = format_leaderboard_section(title, leaderboard_df)
-    await interaction.followup.send(content)
+    
+    embed = create_leaderboard_embed(title, leaderboard_df, 'user')
+    await interaction.followup.send(embed=embed)
 
 
 @tree.command(name="teams", description="Display team sales leaderboards.")
@@ -350,15 +397,12 @@ async def teams_leaderboard(interaction: discord.Interaction):
 
     est_timezone = pytz.timezone('US/Eastern')
     now = datetime.datetime.now(est_timezone)
-    today_title = f"📊 Today ({now.strftime('%A')}):"
+    
+    today_embed = create_leaderboard_embed(f"📊 Today's Team Leaderboard ({now.strftime('%A')})", today_df, 'team')
+    week_embed = create_leaderboard_embed("📅 Week-to-Date Team Leaderboard", week_df, 'team')
+    month_embed = create_leaderboard_embed("🥇 Month-to-Date Team Leaderboard", month_df, 'team')
 
-    today_content = format_team_leaderboard_section(today_title, today_df)
-    week_content = format_team_leaderboard_section("📅 Week-to-Date:", week_df)
-    month_content = format_team_leaderboard_section("🥇 Month-to-Date:", month_df)
-
-    content = f"**🏆 Team Leaderboards 🏆**\n\n{today_content}\n\n{week_content}\n\n{month_content}"
-
-    await interaction.followup.send(content)
+    await interaction.followup.send(embeds=[today_embed, week_embed, month_embed])
 
 
 # @tree.command(name="dev", description="Developer command to test bot functionality.")
@@ -395,18 +439,12 @@ async def daily_leaderboard_post():
 
     est_timezone = pytz.timezone('US/Eastern')
     now = datetime.datetime.now(est_timezone)
-    today_title = f"📊 Today ({now.strftime('%A')}):"
     
-    today_content = format_leaderboard_section(today_title, today_df)
-    week_content = format_leaderboard_section("📅 Week-to-Date:", week_df)
-    month_content = format_leaderboard_section("🥇 Month-to-Date:", month_df)
+    today_embed = create_leaderboard_embed(f"📊 Today's Leaderboard ({now.strftime('%A')})", today_df, 'user')
+    week_embed = create_leaderboard_embed("📅 Week-to-Date Leaderboard", week_df, 'user')
+    month_embed = create_leaderboard_embed("🥇 Month-to-Date Leaderboard", month_df, 'user')
     
-    if now.weekday() == 4:
-        content = f"{today_content}\n\n{week_content}\n\n{month_content}"
-    else:
-        content = f"{today_content}\n\n{week_content}\n\n{month_content}"
-        
-    await channel.send(content)
+    await channel.send(embeds=[today_embed, week_embed, month_embed])
 
 
 async def run_daily_team_leaderboards_post():
@@ -430,11 +468,7 @@ async def run_daily_team_leaderboards_post():
             continue
 
         team_records_df = all_records_df[all_records_df['Team'] == team_name]
-        if team_records_df.empty:
-            print(f"No records found for team '{team_name}'.")
-            await channel.send(f"**🏆 Daily Leaderboard for {team_name} 🏆**\n\nNo sales recorded yet for today, this week, or this month.")
-            continue
-
+        
         team_records = team_records_df.to_dict('records')
 
         today_df, week_df, month_df = await asyncio.gather(
@@ -445,16 +479,38 @@ async def run_daily_team_leaderboards_post():
 
         est_timezone = pytz.timezone('US/Eastern')
         now = datetime.datetime.now(est_timezone)
-        today_title = f"📊 Today ({now.strftime('%A')}):"
+        
+        embed = discord.Embed(
+            title=f"🏆 Daily Leaderboard for {team_name} 🏆",
+            color=discord.Color.blue()
+        )
+        
+        today_title = f"📊 Today ({now.strftime('%A')})"
+        today_lines = [f"{rank}. <@{str(row['User ID']).split('.')[0]}>: ${row['TotalPremium']:,.2f} | {int(row['SaleCount'])} FP" for rank, row in today_df.iterrows()]
+        embed.add_field(
+            name=today_title,
+            value="\n".join(today_lines) if today_lines else "No entries yet for this period.",
+            inline=False
+        )
 
-        today_content = format_leaderboard_section(today_title, today_df)
-        week_content = format_leaderboard_section("📅 Week-to-Date:", week_df)
-        month_content = format_leaderboard_section("🥇 Month-to-Date:", month_df)
+        week_title = "📅 Week-to-Date"
+        week_lines = [f"{rank}. <@{str(row['User ID']).split('.')[0]}>: ${row['TotalPremium']:,.2f} | {int(row['SaleCount'])} FP" for rank, row in week_df.iterrows()]
+        embed.add_field(
+            name=week_title,
+            value="\n".join(week_lines) if week_lines else "No entries yet for this period.",
+            inline=False
+        )
 
-        content = f"**🏆 Daily Leaderboard for {team_name} 🏆**\n\n{today_content}\n\n{week_content}\n\n{month_content}"
+        month_title = "🥇 Month-to-Date"
+        month_lines = [f"{rank}. <@{str(row['User ID']).split('.')[0]}>: ${row['TotalPremium']:,.2f} | {int(row['SaleCount'])} FP" for rank, row in month_df.iterrows()]
+        embed.add_field(
+            name=month_title,
+            value="\n".join(month_lines) if month_lines else "No entries yet for this period.",
+            inline=False
+        )
 
         try:
-            await channel.send(content)
+            await channel.send(embed=embed)
             print(f"Successfully posted daily leaderboard for team '{team_name}' in channel {channel.name}.")
         except Exception as e:
             print(f"Error posting daily leaderboard for team '{team_name}' in channel {channel.name}: {e}")
